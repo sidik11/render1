@@ -470,7 +470,7 @@ function createCsrfToken() {
 function verifyCsrfToken(token) {
   const value = String(token || '');
   const parts = value.split('.');
-  if (parts.length !== 3 || !parts[0] || !/^\\d+$/.test(parts[1]) || !parts[2]) return false;
+  if (parts.length !== 3 || !parts[0] || !/^\d+$/.test(parts[1]) || !parts[2]) return false;
   const issuedAt = Number(parts[1]);
   if (!Number.isSafeInteger(issuedAt) || issuedAt > Date.now() + 30000 || Date.now() - issuedAt > CSRF_TTL_MS) return false;
   const payload = parts[0] + '.' + parts[1];
@@ -491,7 +491,7 @@ function csrfCookieToken(req) {
 }
 
 function expectedFrontendOrigin(req) {
-  const configured = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\\/$/, '');
+  const configured = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/$/, '');
   if (configured) return configured;
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
   const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
