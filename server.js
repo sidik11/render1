@@ -361,13 +361,29 @@ async function currentUser(req,roles){
 }
 function requireRole(req, role) { return currentUser(req, [role]); }
 
+function gmailConfigStatus() {
+  return {
+    clientId: !!CFG.gmail.clientId,
+    clientSecret: !!CFG.gmail.clientSecret,
+    refreshToken: !!CFG.gmail.refreshToken,
+    sender: !!CFG.gmail.sender,
+    redirectUri: !!CFG.gmail.redirectUri
+  };
+}
+console.log('[Email] Gmail configuration presence:', gmailConfigStatus());
+
 async function sendEmail(to, subject, html, text='') {
-  if (!CFG.gmail.clientId || !CFG.gmail.clientSecret || !CFG.gmail.refreshToken || !CFG.gmail.sender || !to) {
-    console.warn('[Email] Gmail API not fully configured — email skipped for:', to, subject);
+  const missing = Object.entries(gmailConfigStatus()).filter(([,ok]) => !ok).map(([key]) => key);
+  if (missing.length || !to) {
+    console.warn('[Email] Gmail API configuration incomplete. Missing:', missing.join(', ') || 'recipient');
     return false;
   }
   try {
-    const oauth2 = new google.auth.OAuth2(CFG.gmail.clientId, CFG.gmail.clientSecret, CFG.gmail.redirectUri || undefined);
+    const oauth2 = new google.auth.OAuth2(
+      CFG.gmail.clientId,
+      CFG.gmail.clientSecret,
+      CFG.gmail.redirectUri || undefined
+    );
     oauth2.setCredentials({ refresh_token: CFG.gmail.refreshToken });
     const gmail = google.gmail({ version:'v1', auth:oauth2 });
     const mime = [
@@ -383,7 +399,11 @@ async function sendEmail(to, subject, html, text='') {
     await gmail.users.messages.send({ userId:'me', requestBody:{ raw } });
     return true;
   } catch (e) {
-    console.error('Gmail send failed:', e.message);
+    const status = e?.response?.status || e?.code || 'unknown';
+    const data = e?.response?.data;
+    const detail = data?.error_description || data?.error?.message || data?.error?.errors?.[0]?.message || e.message || 'Unknown Gmail error';
+    const reason = data?.error || data?.error?.errors?.[0]?.reason || '';
+    console.error('[Gmail] send failed:', JSON.stringify({ status, reason, detail }));
     return false;
   }
 }
