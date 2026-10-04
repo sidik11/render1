@@ -22,6 +22,7 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
+const SERVER_BUILD_ID = 'server1-gmail-rewrite-2026-10-04';
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
@@ -624,7 +625,7 @@ async function route(req, res) {
     return send(res,200,{paymentEnabled:CFG.payment.enabled,paymentMode:CFG.payment.enabled?'test':null,authMode:'manual'});
   }
   if (url.pathname==='/api/health' && method==='GET') {
-    return send(res,200,{ok:true, status:'online'});
+    return send(res,200,{ok:true,status:'online',build:SERVER_BUILD_ID,gmail:gmailConfigStatus()});
   }
 
   if (url.pathname==='/api/admin/request-otp' && method==='POST') {
