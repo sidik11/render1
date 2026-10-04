@@ -375,8 +375,9 @@ console.log('[Email] Gmail configuration presence:', gmailConfigStatus());
 async function sendEmail(to, subject, html, text='') {
   const missing = Object.entries(gmailConfigStatus()).filter(([,ok]) => !ok).map(([key]) => key);
   if (missing.length || !to) {
-    console.warn('[Email] Gmail API configuration incomplete. Missing:', missing.join(', ') || 'recipient');
-    return false;
+    const detail = missing.length ? 'Missing environment variables: '+missing.join(', ') : 'Recipient email is missing.';
+    console.warn('[Email] Gmail API configuration incomplete:', detail);
+    return { ok:false, error:'config', detail };
   }
   try {
     const oauth2 = new google.auth.OAuth2(
@@ -397,14 +398,14 @@ async function sendEmail(to, subject, html, text='') {
     ].join('\r\n');
     const raw = Buffer.from(mime).toString('base64url');
     await gmail.users.messages.send({ userId:'me', requestBody:{ raw } });
-    return true;
+    return { ok:true };
   } catch (e) {
     const status = e?.response?.status || e?.code || 'unknown';
     const data = e?.response?.data;
-    const detail = data?.error_description || data?.error?.message || data?.error?.errors?.[0]?.message || e.message || 'Unknown Gmail error';
-    const reason = data?.error || data?.error?.errors?.[0]?.reason || '';
+    const detail = String(data?.error_description || data?.error?.message || data?.error?.errors?.[0]?.message || e.message || 'Unknown Gmail error').slice(0,500);
+    const reason = String(data?.error?.errors?.[0]?.reason || data?.error || '').slice(0,120);
     console.error('[Gmail] send failed:', JSON.stringify({ status, reason, detail }));
-    return false;
+    return { ok:false, error:'gmail', status, reason, detail };
   }
 }
 
@@ -640,12 +641,15 @@ async function route(req, res) {
       'Competitive Exam Master Admin OTP',
       emailShell('Admin login verification','<p>Your one-time Admin login OTP is:</p><div style="font-size:32px;font-weight:800;letter-spacing:8px;padding:14px 0">'+otp+'</div><p>This OTP expires in 10 minutes. If you did not request this, ignore this email.</p>')
     );
-    if (!sent) {
+    if (!sent || sent.ok !== true) {
       adminOtpState.hash='';
       adminOtpState.expiresAt=0;
       adminOtpState.attempts=0;
       adminOtpState.sentAt=0;
-      throw Object.assign(new Error('Admin email delivery is unavailable. Configure Gmail API credentials before requesting an OTP.'),{status:503});
+      const detail = sent?.error === 'config'
+        ? sent.detail
+        : 'Gmail API rejected the email request (status '+String(sent?.status || 'unknown')+', reason '+String(sent?.reason || 'unknown')+'). '+String(sent?.detail || '');
+      throw Object.assign(new Error('Admin email delivery failed. '+detail),{status:503});
     }
     return send(res,200,{message:'OTP sent to the authorized Admin Gmail address.'});
   }
