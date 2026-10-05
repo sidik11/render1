@@ -570,8 +570,8 @@ async function route(req, res) {
   }
 
   if (url.pathname==='/api/admin/request-otp' && method==='POST') {
-    const b=await body(req), email=cleanEmail(b.email); rateLimit(req,'admin-otp',5,900000,email);
-    if(email!==CFG.admin.email) throw Object.assign(new Error('This email is not authorized for Admin access.'),{status:403});
+    await body(req);
+    rateLimit(req,'admin-otp',5,900000,'admin');
     if(Date.now()-adminOtpState.sentAt < 60*1000) throw Object.assign(new Error('Please wait 60 seconds before requesting another OTP.'),{status:429});
     const otp=String(crypto.randomInt(100000,1000000));
     adminOtpState.hash=hashAdminOtp(otp);
@@ -593,12 +593,11 @@ async function route(req, res) {
         : 'Gmail API rejected the email request (status '+String(sent?.status || 'unknown')+', reason '+String(sent?.reason || 'unknown')+'). '+String(sent?.detail || '');
       throw Object.assign(new Error('Admin email delivery failed. '+detail),{status:503});
     }
-    return send(res,200,{message:'OTP sent to the authorized Admin Gmail address.'});
+    return send(res,200,{message:'OTP sent to the configured administrator email.'});
   }
 
   if (url.pathname==='/api/admin/verify-otp' && method==='POST') {
-    const b=await body(req), email=cleanEmail(b.email), otp=String(b.otp||'').trim(); rateLimit(req,'admin-otp-verify',10,900000,email);
-    if(email!==CFG.admin.email) throw Object.assign(new Error('This email is not authorized for Admin access.'),{status:403});
+    const b=await body(req), otp=String(b.otp||'').trim(); rateLimit(req,'admin-otp-verify',10,900000,'admin');
     if(!/^\d{6}$/.test(otp) || !adminOtpState.hash || Date.now()>adminOtpState.expiresAt) throw Object.assign(new Error('OTP is invalid or expired. Request a new OTP.'),{status:401});
     adminOtpState.attempts++;
     if(adminOtpState.attempts>5){ adminOtpState.hash=''; throw Object.assign(new Error('Too many OTP attempts. Request a new OTP.'),{status:429}); }
