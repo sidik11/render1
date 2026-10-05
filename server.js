@@ -22,26 +22,8 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-payment-env-resolver-2026-10-05';
+const SERVER_BUILD_ID = 'server1-payment-env-resolver-fix-2026-10-05';
 
-const CFG = {
-  port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
-  role: 'core',
-  dbUrl: process.env.SERVER1_FIREBASE_DATABASE_URL || '',
-  projectId: process.env.SERVER1_FIREBASE_PROJECT_ID || '',
-  clientEmail: process.env.SERVER1_FIREBASE_CLIENT_EMAIL || '',
-  privateKey: (process.env.SERVER1_FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-  gmail: {
-    clientId: process.env.GMAIL_CLIENT_ID || '',
-    clientSecret: process.env.GMAIL_CLIENT_SECRET || '',
-    refreshToken: process.env.GMAIL_REFRESH_TOKEN || '',
-    redirectUri: process.env.GMAIL_REDIRECT_URI || '',
-    sender: process.env.GMAIL_SENDER_EMAIL || ''
-  },
-  admin: {
-    email: 'mjdeveloperodisha@gmail.com',
-    name: process.env.ADMIN_NAME || 'Administrator'
-  },
 function envValue(...names) {
   for (const name of names) {
     if (Object.prototype.hasOwnProperty.call(process.env, name)) {
@@ -52,8 +34,6 @@ function envValue(...names) {
   return '';
 }
 
-// Accept the documented Render variable names plus common Test-Mode aliases.
-// Never hard-code credentials in source code.
 const RAZORPAY_KEY_ID_ENV = ['RAZORPAY_KEY_ID','RAZORPAY_TEST_KEY_ID','RZP_KEY_ID'];
 const RAZORPAY_KEY_SECRET_ENV = ['RAZORPAY_KEY_SECRET','RAZORPAY_TEST_KEY_SECRET','RZP_KEY_SECRET'];
 const RAZORPAY_WEBHOOK_SECRET_ENV = ['RAZORPAY_WEBHOOK_SECRET','RAZORPAY_TEST_WEBHOOK_SECRET','RZP_WEBHOOK_SECRET'];
