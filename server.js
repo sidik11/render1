@@ -22,7 +22,7 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-csrf-disabled-2026-10-05';
+const SERVER_BUILD_ID = 'server1-core-fixed-2026-10-05';
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
@@ -1277,6 +1277,31 @@ async function pingServer2() {
 }
 setInterval(pingServer2, KEEPALIVE_MS).unref();
 
+async function handleInternalAuthVerify(req,res){
+  if(req.method!=='POST' || req.url!=='/api/internal/auth/verify') return false;
+  try {
+    if(String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET||'')){
+      return send(res,403,{error:'Forbidden.'});
+    }
+    const portal=String(req.headers['x-cem-portal']||'student').toLowerCase();
+    if(!['student','admin'].includes(portal)) return send(res,400,{error:'Invalid portal.'});
+    const token=getSessionToken(req,portal);
+    const adminSession=verifyAdminSession(token);
+    const userSession=verifyUserSession(token);
+    if(!adminSession&&!userSession) return send(res,401,{error:'Invalid session.'});
+    const uidValue=adminSession?adminSession.uid:userSession.uid;
+    const user=await get('users/'+uidValue);
+    if(!user || user.blocked || !['admin','student','teacher'].includes(user.role) ||
+       (user.role==='teacher' && user.status!=='approved')){
+      return send(res,403,{error:'Account not authorized.'});
+    }
+    return send(res,200,{ok:true,user:publicUser(user)});
+  } catch(e){
+    console.error('[InternalAuth] verification failed:',e);
+    return send(res,errorStatus(e),{error:e.message||'Internal authentication failed.'});
+  }
+}
+
 const server=http.createServer(async(req,res)=>{
   // Public liveness endpoints: these must work without /api routing.
   if(req.method==='GET' && req.url==='/health') {
@@ -1285,7 +1310,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET' && req.url==='/api/health') {
     return send(res,200,{ok:true,status:'online',server:'server1',timestamp:nowIso(),build:SERVER_BUILD_ID});
   }
-  if(req.url.startsWith('/exam-api/')) return await proxyExamRequest(req,res);
+  if(await handleInternalAuthVerify(req,res)) return;
+  if(req.url==='/exam-api' || req.url.startsWith('/exam-api/')) return await proxyExamRequest(req,res);
 
   server.headersTimeout=65000; server.requestTimeout=120000; server.keepAliveTimeout=5000;
   try {
