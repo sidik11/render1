@@ -1252,7 +1252,7 @@ function serveStatic(req,res) {
 
 
 function proxyExamRequest(req,res){
-  const target=new URL(process.env.SERVER2_URL||'http://127.0.0.1:3001');
+  const target=new URL(process.env.SERVER2_URL||'https://server2-xd6t.onrender.com');
   const upstreamPath=req.url.replace(/^\/exam-api/,'')||'/';
   const transport=target.protocol==='https:'?https:http;
   const client=transport.request({hostname:target.hostname,port:target.port||(target.protocol==='https:'?443:80),path:upstreamPath,method:req.method,headers:{...req.headers,host:target.host,origin:'',referer:'','x-internal-proxy':'1'}},up=>{
@@ -1262,7 +1262,7 @@ function proxyExamRequest(req,res){
   req.pipe(client);
 }
 
-const SERVER2_URL = String(process.env.SERVER2_URL || '').trim().replace(/\/$/, '');
+const SERVER2_URL = String(process.env.SERVER2_URL || 'https://server2-xd6t.onrender.com').trim().replace(/\/$/, '');
 const KEEPALIVE_MS = Math.max(60000, Number(process.env.KEEPALIVE_MS || 300000));
 
 async function pingServer2() {
