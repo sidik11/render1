@@ -22,7 +22,7 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-payment-toggle-fix-2026-10-05';
+const SERVER_BUILD_ID = 'server1-payment-toggle-trim-fix-2026-10-05';
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
@@ -48,9 +48,11 @@ const CFG = {
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
   }
 };
+const razorpayKeyId = String(CFG.payment.keyId || '').trim();
+const razorpayKeySecret = String(CFG.payment.keySecret || '').trim();
 const razorpayTestKeysConfigured =
-  String(CFG.payment.keyId).startsWith('rzp_test_') &&
-  String(CFG.payment.keySecret).trim().length >= 8;
+  razorpayKeyId.startsWith('rzp_test_') &&
+  razorpayKeySecret.length >= 8;
 CFG.payment.enabled = razorpayTestKeysConfigured;
 
 let db = null;
@@ -985,7 +987,14 @@ async function route(req, res) {
   if(url.pathname==='/api/admin/razorpay'&&method==='GET'){
     await requireRole(req,'admin');
     const payment=(await get('payment'))||DEFAULT_PAYMENT;
-    return send(res,200,{enabled:CFG.payment.enabled && payment.razorpayEnabled===true,configured:CFG.payment.enabled});
+    return send(res,200,{
+      enabled:CFG.payment.enabled && payment.razorpayEnabled===true,
+      configured:CFG.payment.enabled,
+      keyIdPresent:!!razorpayKeyId,
+      keyIdPrefix:razorpayKeyId ? razorpayKeyId.slice(0,8) : '',
+      secretPresent:razorpayKeySecret.length>=8,
+      secretLength:razorpayKeySecret.length
+    });
   }
 
   if(url.pathname==='/api/admin/razorpay'&&method==='POST'){
@@ -997,7 +1006,14 @@ async function route(req, res) {
     payment.razorpayEnabled=requested;
     payment.gatewayUrl='';
     await set('payment',payment);
-    return send(res,200,{message:requested?'Razorpay Test Mode enabled. Students can see the Razorpay payment option.':'Razorpay Test Mode disabled. Students will see manual payment only.',enabled:requested,configured:CFG.payment.enabled});
+    return send(res,200,{
+      message:requested?'Razorpay Test Mode enabled. Students can see the Razorpay payment option.':'Razorpay Test Mode disabled. Students will see manual payment only.',
+      enabled:requested,
+      configured:CFG.payment.enabled,
+      keyIdPresent:!!razorpayKeyId,
+      keyIdPrefix:razorpayKeyId ? razorpayKeyId.slice(0,8) : '',
+      secretPresent:razorpayKeySecret.length>=8
+    });
   }
 
   if(url.pathname==='/api/payment-settings'&&method==='PUT'){
