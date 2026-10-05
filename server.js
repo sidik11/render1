@@ -1278,6 +1278,13 @@ async function pingServer2() {
 setInterval(pingServer2, KEEPALIVE_MS).unref();
 
 const server=http.createServer(async(req,res)=>{
+  // Public liveness endpoints: these must work without /api routing.
+  if(req.method==='GET' && req.url==='/health') {
+    return send(res,200,{ok:true,status:'online',server:'server1',timestamp:nowIso(),build:SERVER_BUILD_ID});
+  }
+  if(req.method==='GET' && req.url==='/api/health') {
+    return send(res,200,{ok:true,status:'online',server:'server1',timestamp:nowIso(),build:SERVER_BUILD_ID});
+  }
   if(req.url.startsWith('/exam-api/')) return await proxyExamRequest(req,res);
 
   server.headersTimeout=65000; server.requestTimeout=120000; server.keepAliveTimeout=5000;
