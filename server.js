@@ -1009,7 +1009,8 @@ async function route(req, res) {
       keyIdEnv:RAZORPAY_KEY_ID_ENV.find(name=>String(process.env[name]||'').trim()) || '',
       secretPresent:razorpayKeySecret.length>=8,
       secretLength:razorpayKeySecret.length,
-      secretEnv:RAZORPAY_KEY_SECRET_ENV.find(name=>String(process.env[name]||'').trim()) || ''
+      secretEnv:RAZORPAY_KEY_SECRET_ENV.find(name=>String(process.env[name]||'').trim()) || '',
+      build:SERVER_BUILD_ID
     });
   }
 
@@ -1028,7 +1029,8 @@ async function route(req, res) {
       configured:CFG.payment.enabled,
       keyIdPresent:!!razorpayKeyId,
       keyIdPrefix:razorpayKeyId ? razorpayKeyId.slice(0,8) : '',
-      secretPresent:razorpayKeySecret.length>=8
+      secretPresent:razorpayKeySecret.length>=8,
+      build:SERVER_BUILD_ID
     });
   }
 
