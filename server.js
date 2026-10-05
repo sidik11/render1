@@ -200,7 +200,7 @@ const DEFAULT_SETTINGS = {
   institutionName:'Competitive Exam Master', logoDataUrl:'', address:'', contactEmail:'', contactPhone:'',
   themeMode:'light', backgroundColor:'#f3f5f9', foregroundColor:'#172033', primaryColor:'#2563eb'
 };
-const DEFAULT_PAYMENT = { upiId:'', payeeName:'', note:'', gatewayUrl: process.env.PAYMENT_GATEWAY_URL || '' };
+const DEFAULT_PAYMENT = { upiId:'', payeeName:'', note:'', qrDataUrl:'', gatewayUrl:'', razorpayEnabled:false };
 
 const nowIso = () => new Date().toISOString();
 const uid = (prefix='') => prefix + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex');
@@ -256,7 +256,12 @@ async function migrateLegacyTestOwnership(userId,oldEmail,newEmail) {
 
 async function ensureSeeds() {
   if (!(await get('settings'))) await set('settings', DEFAULT_SETTINGS);
-  if (!(await get('payment'))) await set('payment', DEFAULT_PAYMENT);
+  const existingPayment = await get('payment');
+  if (!existingPayment) {
+    await set('payment', DEFAULT_PAYMENT);
+  } else if (existingPayment.razorpayEnabled === undefined) {
+    await update('payment', { razorpayEnabled:false, gatewayUrl:'' });
+  }
   if (!(await get('modules'))) {
     const obj={}; DEFAULT_MODULES.forEach((m,i)=>{obj['m-default-'+(i+1)]={...m,id:'m-default-'+(i+1),createdBy:'system',createdAt:nowIso()};});
     await set('modules',obj);
@@ -462,6 +467,11 @@ function send(res,status,data){const h=securityHeaders(res.req);const origin=cor
 
 function errorStatus(e){ return Number(e.status)||500; }
 
+async function isRazorpayEnabled() {
+  const payment = await get('payment');
+  return CFG.payment.enabled && payment?.razorpayEnabled === true;
+}
+
 function razorpayApi(method, apiPath, payload) {
   return new Promise((resolve, reject) => {
     const data = payload ? JSON.stringify(payload) : null;
@@ -559,7 +569,8 @@ async function route(req, res) {
     return send(res,200,{user:publicUser(user)});
   }
   if (url.pathname==='/api/config' && method==='GET') {
-    return send(res,200,{paymentEnabled:CFG.payment.enabled,paymentMode:CFG.payment.enabled?'test':null,authMode:'manual'});
+    const razorpayEnabled = await isRazorpayEnabled();
+    return send(res,200,{paymentEnabled:razorpayEnabled,paymentMode:razorpayEnabled?'test':null,authMode:'manual'});
   }
   if (url.pathname==='/api/health' && method==='GET') {
     return send(res,200,{ok:true,status:'online',build:SERVER_BUILD_ID,gmail:gmailConfigStatus()});
@@ -709,7 +720,8 @@ async function route(req, res) {
 
   if (url.pathname==='/api/admin/system-status' && method==='GET') {
     await requireRole(req,'admin');
-    return send(res,200,{storagePersistent:!!db&&!useMemDb,paymentEnabled:CFG.payment.enabled});
+    const razorpayEnabled = await isRazorpayEnabled();
+    return send(res,200,{storagePersistent:!!db&&!useMemDb,paymentEnabled:razorpayEnabled,razorpayConfigured:CFG.payment.enabled});
   }
 
   if(url.pathname==='/api/notices'&&method==='GET'){
@@ -946,7 +958,8 @@ async function route(req, res) {
     await currentUser(req);
     const plans=Object.values(await allMap('plans'));
     const savedPayment=(await get('payment'))||DEFAULT_PAYMENT;
-    const payment={...savedPayment,gatewayUrl:'',gatewayEnabled:CFG.payment.enabled,gatewayMode:CFG.payment.enabled?'test':null};
+    const razorpayEnabled=CFG.payment.enabled && savedPayment.razorpayEnabled===true;
+    const payment={...savedPayment,gatewayUrl:'',gatewayEnabled:razorpayEnabled,razorpayEnabled,gatewayMode:razorpayEnabled?'test':null};
     return send(res,200,{plans,payment});
   }
   if(url.pathname==='/api/plans'&&method==='POST'){
@@ -967,10 +980,28 @@ async function route(req, res) {
     return send(res,200,{message:'Plan removed.',plans:Object.values(plans)});
   }
 
+  if(url.pathname==='/api/admin/razorpay'&&method==='GET'){
+    await requireRole(req,'admin');
+    const payment=(await get('payment'))||DEFAULT_PAYMENT;
+    return send(res,200,{enabled:CFG.payment.enabled && payment.razorpayEnabled===true,configured:CFG.payment.enabled});
+  }
+
+  if(url.pathname==='/api/admin/razorpay'&&method==='POST'){
+    await requireRole(req,'admin');
+    const b=await body(req);
+    const requested=b.enabled===true || String(b.enabled).toLowerCase()==='true';
+    if(requested && !CFG.payment.enabled) throw Object.assign(new Error('Razorpay cannot be enabled because the server Razorpay Test Mode keys are not configured.'),{status:503});
+    const payment=(await get('payment'))||DEFAULT_PAYMENT;
+    payment.razorpayEnabled=requested;
+    payment.gatewayUrl='';
+    await set('payment',payment);
+    return send(res,200,{message:requested?'Razorpay Test Mode enabled. Students can see the Razorpay payment option.':'Razorpay Test Mode disabled. Students will see manual payment only.',enabled:requested,configured:CFG.payment.enabled});
+  }
+
   if(url.pathname==='/api/payment-settings'&&method==='PUT'){
     await requireRole(req,'admin');
     const b=await body(req);
-    const existing=(await get('payment'))||DEFAULT_PAYMENT;const qr=b.qrDataUrl===undefined?String(existing.qrDataUrl||'').trim():String(b.qrDataUrl||'').trim();if(qr&&!/^data:image\/(png|jpe?g|webp);base64,/i.test(qr))throw new Error('UPI QR must be a PNG, JPG or WebP image.');if(qr.length>900000)throw new Error('UPI QR image is too large. Keep it under about 650 KB.');const payment={upiId:String(b.upiId||'').trim(),payeeName:String(b.payeeName||'').trim(),note:String(b.note||'').trim(),qrDataUrl:qr,gatewayUrl:''};
+    const existing=(await get('payment'))||DEFAULT_PAYMENT;const qr=b.qrDataUrl===undefined?String(existing.qrDataUrl||'').trim():String(b.qrDataUrl||'').trim();if(qr&&!/^data:image\/(png|jpe?g|webp);base64,/i.test(qr))throw new Error('UPI QR must be a PNG, JPG or WebP image.');if(qr.length>900000)throw new Error('UPI QR image is too large. Keep it under about 650 KB.');const payment={upiId:String(b.upiId||'').trim(),payeeName:String(b.payeeName||'').trim(),note:String(b.note||'').trim(),qrDataUrl:qr,gatewayUrl:'',razorpayEnabled:existing.razorpayEnabled===true};
     await set('payment',payment);
     return send(res,200,{message:'Payment details saved.',payment});
   }
@@ -1088,7 +1119,7 @@ async function route(req, res) {
   // Integrated Razorpay / Orders API
   if (url.pathname === '/api/orders' && method === 'POST') {
     const { uid: userId, user } = await requireRole(req,'student');
-    if (!CFG.payment.enabled) throw Object.assign(new Error('Razorpay Test Mode is not configured. Add a Razorpay Test Mode Key ID beginning with rzp_test_ and its Key Secret to the server environment.'),{status:503});
+    if (!(await isRazorpayEnabled())) throw Object.assign(new Error('Razorpay Test Mode is currently disabled by the Administrator.'),{status:503});
     const b = await body(req);
     const plansObj = await allMap('plans');
     const plan = plansObj[b.planId] || Object.values(plansObj).find(x => x.id === b.planId);
@@ -1105,7 +1136,7 @@ async function route(req, res) {
   if (url.pathname === '/api/verify' && method === 'POST') {
     const {uid:userId}=await requireRole(req,'student');
     rateLimit(req,'payment-verify',10,600000,userId);
-    if (!CFG.payment.enabled) throw Object.assign(new Error('Razorpay Test Mode is not configured on the server.'),{status:503});
+    if (!(await isRazorpayEnabled())) throw Object.assign(new Error('Razorpay Test Mode is currently disabled by the Administrator.'),{status:503});
     const b = await body(req), oid = String(b.razorpay_order_id||''), pid = String(b.razorpay_payment_id||''), sig = String(b.razorpay_signature||'');
     const order = await get('orders/' + oid);
     if (!oid || !order) throw Object.assign(new Error('Invalid payment details.'), { status: 400 });
@@ -1133,6 +1164,7 @@ async function route(req, res) {
   }
 
   if (url.pathname === '/api/webhook' && method === 'POST') {
+    if (!(await isRazorpayEnabled())) return send(res,503,{error:'Razorpay Test Mode is currently disabled by the Administrator.'});
     const raw = await new Promise((resolve,reject) => {
       const chunks=[]; let size=0;
       req.on('data',chunk=>{ size+=chunk.length; if(size>1e6){reject(Object.assign(new Error('Webhook body too large.'),{status:413}));req.destroy();return;} chunks.push(chunk); });
