@@ -642,6 +642,10 @@ async function route(req, res) {
     return send(res,200,{ok:true,status:'online',build:SERVER_BUILD_ID,gmail:gmailConfigStatus()});
   }
 
+  if (url.pathname==='/health' && method==='GET') {
+    return send(res,200,{status:'ok',server:'server1',timestamp:nowIso(),build:SERVER_BUILD_ID});
+  }
+
   if (url.pathname==='/api/admin/request-otp' && method==='POST') {
     const b=await body(req), email=cleanEmail(b.email); rateLimit(req,'admin-otp',5,900000,email);
     if(email!==CFG.admin.email) throw Object.assign(new Error('This email is not authorized for Admin access.'),{status:403});
@@ -1335,6 +1339,21 @@ function proxyExamRequest(req,res){
   client.on('error',e=>send(res,502,{error:'Exam server unavailable.',detail:e.message}));
   req.pipe(client);
 }
+
+const SERVER2_URL = String(process.env.SERVER2_URL || '').trim().replace(/\/$/, '');
+const KEEPALIVE_MS = Math.max(60000, Number(process.env.KEEPALIVE_MS || 300000));
+
+async function pingServer2() {
+  if (!SERVER2_URL) return;
+  try {
+    const response = await fetch(SERVER2_URL + '/health', { method:'GET', headers:{'User-Agent':'CompetitiveExamMaster-Server1/1.0'} });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    console.log('[KeepAlive] Server 2 is alive:', response.status);
+  } catch (err) {
+    console.error('[KeepAlive] Server 2 ping failed:', err.message);
+  }
+}
+setInterval(pingServer2, KEEPALIVE_MS).unref();
 
 const server=http.createServer(async(req,res)=>{
   if(req.url.startsWith('/exam-api/')) return await proxyExamRequest(req,res);
