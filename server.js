@@ -22,7 +22,7 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-payment-toggle-2026-10-05';
+const SERVER_BUILD_ID = 'server1-payment-toggle-fix-2026-10-05';
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
@@ -45,11 +45,13 @@ const CFG = {
   payment: {
     keyId: process.env.RAZORPAY_KEY_ID || '',
     keySecret: process.env.RAZORPAY_KEY_SECRET || '',
-    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
-    mock: process.env.MOCK_GATEWAY === '1' || !String(process.env.RAZORPAY_KEY_ID || '').startsWith('rzp_test_') || !process.env.RAZORPAY_KEY_SECRET
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
   }
 };
-CFG.payment.enabled = !CFG.payment.mock;
+const razorpayTestKeysConfigured =
+  String(CFG.payment.keyId).startsWith('rzp_test_') &&
+  String(CFG.payment.keySecret).trim().length >= 8;
+CFG.payment.enabled = razorpayTestKeysConfigured;
 
 let db = null;
 let useMemDb = false;
