@@ -22,7 +22,7 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-core-fixed-2026-10-05';
+const SERVER_BUILD_ID = 'server1-payment-toggle-2026-10-05';
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
