@@ -22,7 +22,41 @@ function loadEnv(file = path.join(__dirname, '.env')) {
 }
 loadEnv();
 process.env.SERVER_ROLE='core';
-const SERVER_BUILD_ID = 'server1-payment-toggle-trim-fix-2026-10-05';
+const SERVER_BUILD_ID = 'server1-payment-env-resolver-2026-10-05';
+
+const CFG = {
+  port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
+  role: 'core',
+  dbUrl: process.env.SERVER1_FIREBASE_DATABASE_URL || '',
+  projectId: process.env.SERVER1_FIREBASE_PROJECT_ID || '',
+  clientEmail: process.env.SERVER1_FIREBASE_CLIENT_EMAIL || '',
+  privateKey: (process.env.SERVER1_FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  gmail: {
+    clientId: process.env.GMAIL_CLIENT_ID || '',
+    clientSecret: process.env.GMAIL_CLIENT_SECRET || '',
+    refreshToken: process.env.GMAIL_REFRESH_TOKEN || '',
+    redirectUri: process.env.GMAIL_REDIRECT_URI || '',
+    sender: process.env.GMAIL_SENDER_EMAIL || ''
+  },
+  admin: {
+    email: 'mjdeveloperodisha@gmail.com',
+    name: process.env.ADMIN_NAME || 'Administrator'
+  },
+function envValue(...names) {
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(process.env, name)) {
+      const value = String(process.env[name] ?? '').trim();
+      if (value) return value;
+    }
+  }
+  return '';
+}
+
+// Accept the documented Render variable names plus common Test-Mode aliases.
+// Never hard-code credentials in source code.
+const RAZORPAY_KEY_ID_ENV = ['RAZORPAY_KEY_ID','RAZORPAY_TEST_KEY_ID','RZP_KEY_ID'];
+const RAZORPAY_KEY_SECRET_ENV = ['RAZORPAY_KEY_SECRET','RAZORPAY_TEST_KEY_SECRET','RZP_KEY_SECRET'];
+const RAZORPAY_WEBHOOK_SECRET_ENV = ['RAZORPAY_WEBHOOK_SECRET','RAZORPAY_TEST_WEBHOOK_SECRET','RZP_WEBHOOK_SECRET'];
 
 const CFG = {
   port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
@@ -43,9 +77,9 @@ const CFG = {
     name: process.env.ADMIN_NAME || 'Administrator'
   },
   payment: {
-    keyId: process.env.RAZORPAY_KEY_ID || '',
-    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
-    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
+    keyId: envValue(...RAZORPAY_KEY_ID_ENV),
+    keySecret: envValue(...RAZORPAY_KEY_SECRET_ENV),
+    webhookSecret: envValue(...RAZORPAY_WEBHOOK_SECRET_ENV)
   }
 };
 const razorpayKeyId = String(CFG.payment.keyId || '').trim();
@@ -992,8 +1026,10 @@ async function route(req, res) {
       configured:CFG.payment.enabled,
       keyIdPresent:!!razorpayKeyId,
       keyIdPrefix:razorpayKeyId ? razorpayKeyId.slice(0,8) : '',
+      keyIdEnv:RAZORPAY_KEY_ID_ENV.find(name=>String(process.env[name]||'').trim()) || '',
       secretPresent:razorpayKeySecret.length>=8,
-      secretLength:razorpayKeySecret.length
+      secretLength:razorpayKeySecret.length,
+      secretEnv:RAZORPAY_KEY_SECRET_ENV.find(name=>String(process.env[name]||'').trim()) || ''
     });
   }
 
