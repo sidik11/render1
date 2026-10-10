@@ -576,6 +576,14 @@ async function route(req, res) {
     rateLimit(req,'api-global',180,60000);
   }
 
+  if (url.pathname==='/api/internal/subscription/active' && method==='GET') {
+    if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)) return send(res,403,{error:'Forbidden.'});
+    const studentId=String(url.searchParams.get('studentId')||'').trim();
+    if(!studentId || studentId.length>200) return send(res,400,{error:'Invalid student ID.'});
+    const subscription=await activeSubscription(studentId);
+    return send(res,200,{active:!!subscription,expiresAt:subscription?.expiresAt||null,planName:subscription?.planName||null});
+  }
+
   if (url.pathname==='/api/internal/auth/verify' && method==='POST') {
     if(String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET||'')) return send(res,403,{error:'Forbidden.'});
     const portal=String(req.headers['x-cem-portal']||'student').toLowerCase();
