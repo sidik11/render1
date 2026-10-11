@@ -1389,7 +1389,7 @@ async function route(req, res) {
       throw Object.assign(new Error('Exam service is unavailable; backup was not created.'),{status:503});
     }finally{clearTimeout(timer);}
     const out={};
-    for(const name of ['users','purchases','subscriptions','plans','payment','modules','settings','orders','passwordResets','webhookEvents','notices'])out[name]=await get(name);
+    for(const name of ['users','purchases','subscriptions','plans','payment','modules','settings','orders','passwordResets','webhookEvents','notices'])out[name]=(await get(name))??{};
     Object.assign(out,examBackup);
     return send(res,200,out);
   }
