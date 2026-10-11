@@ -1509,24 +1509,24 @@ async function handleInternalAuthVerify(req,res){
   if(req.method!=='POST' || req.url!=='/api/internal/auth/verify') return false;
   try {
     if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)){
-      return send(res,403,{error:'Forbidden.'});
+      send(res,403,{error:'Forbidden.'}); return true;
     }
     const portal=String(req.headers['x-cem-portal']||'student').toLowerCase();
-    if(!['student','admin'].includes(portal)) return send(res,400,{error:'Invalid portal.'});
+    if(!['student','admin'].includes(portal)){send(res,400,{error:'Invalid portal.'});return true;}
     const token=getSessionToken(req,portal);
     const adminSession=verifyAdminSession(token);
     const userSession=verifyUserSession(token);
-    if(!adminSession&&!userSession) return send(res,401,{error:'Invalid session.'});
+    if(!adminSession&&!userSession){send(res,401,{error:'Invalid session.'});return true;}
     const uidValue=adminSession?adminSession.uid:userSession.uid;
     const user=await get('users/'+uidValue);
     if(!user || user.blocked || !['admin','student','teacher'].includes(user.role) ||
        (user.role==='teacher' && user.status!=='approved')){
-      return send(res,403,{error:'Account not authorized.'});
+      send(res,403,{error:'Account not authorized.'}); return true;
     }
-    return send(res,200,{ok:true,user:publicUser(user)});
+    send(res,200,{ok:true,user:publicUser(user)}); return true;
   } catch(e){
     console.error('[InternalAuth] verification failed:',e);
-    return send(res,errorStatus(e),{error:e.message||'Internal authentication failed.'});
+    send(res,errorStatus(e),{error:e.message||'Internal authentication failed.'}); return true;
   }
 }
 
