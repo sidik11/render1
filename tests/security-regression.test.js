@@ -12,6 +12,10 @@ test('server.js passes Node syntax validation', () => {
   assert.doesNotThrow(() => execFileSync(process.execPath, ['--check', serverPath], { stdio: 'pipe' }));
 });
 
+test('Render-assigned PORT takes precedence over local port defaults', () => {
+  assert.ok(source.includes('port: Number(process.env.PORT || process.env.SERVER1_PORT'));
+});
+
 test('rate limits use Firebase transactions in production', () => {
   assert.match(source, /async function rateLimit\([\s\S]*?transact\(pathName,current=>/);
   assert.doesNotMatch(source, /await await rateLimit\(/);
