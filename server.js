@@ -614,6 +614,15 @@ async function route(req, res) {
     return send(res,200,{active:!!subscription,expiresAt:subscription?.expiresAt||null,planName:subscription?.planName||null});
   }
 
+  if (url.pathname==='/api/internal/purchase/approved' && method==='GET') {
+    if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)) return send(res,403,{error:'Forbidden.'});
+    const studentId=String(url.searchParams.get('studentId')||'').trim();
+    const testId=String(url.searchParams.get('testId')||'').trim();
+    if(!studentId||studentId.length>200||!testId||testId.length>200) return send(res,400,{error:'Invalid purchase lookup.'});
+    const approved=Object.values(await allMap('purchases')).some(p=>String(p.studentId)===studentId&&String(p.testId)===testId&&p.status==='approved');
+    return send(res,200,{approved});
+  }
+
   if (url.pathname==='/api/internal/auth/verify' && method==='POST') {
     if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)) return send(res,403,{error:'Forbidden.'});
     const portal=String(req.headers['x-cem-portal']||'student').toLowerCase();
@@ -1038,7 +1047,7 @@ async function route(req, res) {
     if(!name||!Number.isFinite(days)||days<1||!Number.isFinite(price)||price<=0||Math.round(price*100)<1||Math.abs(Math.round(price*100)-price*100)>0.000001) throw new Error('Enter a valid plan with a price greater than ₹0 and at most two decimal places.');
     const p={id:uid('plan-'),name,days,price};
     await set('plans/'+p.id,p);
-    return send(res,200,{message:'Plan added.',plans:Object.values(plans)});
+    return send(res,200,{message:'Plan added.',plans:Object.values(await allMap('plans'))});
   }
 
   const mPlan=url.pathname.match(/^\/api\/plans\/([^/]+)$/);
@@ -1213,11 +1222,17 @@ async function route(req, res) {
   const mPur=url.pathname.match(/^\/api\/purchases\/([^/]+)\/decide$/);
   if(mPur&&method==='POST'){
     await requireRole(req,'admin');
-    const b=await body(req), ps=await allMap('purchases'), p=ps[decodeURIComponent(mPur[1])];
-    if(!p) throw new Error('Request not found.');
-    p.status=b.approved?'approved':'rejected';
-    p.decidedAt=nowIso();
-    await set('purchases/'+p.id,p);
+    const b=await body(req),id=decodeURIComponent(mPur[1]),approved=!!b.approved;
+    const decision=await transact('purchases/'+id,current=>{
+      if(!current||current.status!=='pending')return;
+      return {...current,status:approved?'approved':'rejected',decidedAt:nowIso()};
+    });
+    if(!decision.committed){
+      const current=decision.snapshot.val();
+      if(!current)throw new Error('Request not found.');
+      throw new Error('This request was already '+current.status+'.');
+    }
+    const p=decision.snapshot.val();
     await sendEmail(p.studentEmail,'Test access request '+p.status,emailShell('Test access '+p.status,'<p>Your access request for <b>'+escapeHtml(p.testTitle)+'</b> has been '+escapeHtml(p.status)+'.</p>'));
     return send(res,200,{message:'Request '+p.status+'.',purchase:p});
   }
