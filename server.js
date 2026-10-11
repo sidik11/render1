@@ -778,7 +778,7 @@ async function route(req, res) {
     });
     const reset=tx.snapshot.val();
     if(!tx.committed||reset?.consumedBy!==requestId)throw Object.assign(new Error('Invalid or expired reset code.'),{status:400});
-    await set('users/'+user.uid,{...user,passwordHash:hashPassword(newPassword),updatedAt:nowIso()});
+    await update('users/'+user.uid,{passwordHash:hashPassword(newPassword),updatedAt:nowIso()});
     await remove('passwordResets/'+user.uid);
     return send(res,200,{message:'Password reset successfully. You can now sign in.'});
   }
@@ -1425,7 +1425,7 @@ setInterval(pingServer2, KEEPALIVE_MS).unref();
 async function handleInternalAuthVerify(req,res){
   if(req.method!=='POST' || req.url!=='/api/internal/auth/verify') return false;
   try {
-    if(String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET||'')){
+    if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)){
       return send(res,403,{error:'Forbidden.'});
     }
     const portal=String(req.headers['x-cem-portal']||'student').toLowerCase();
