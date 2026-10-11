@@ -1373,16 +1373,44 @@ async function route(req, res) {
 
   if(url.pathname==='/api/admin/backup'&&method==='GET'){
     await requireRole(req,'admin');
-    const names=['users','tests','purchases','subscriptions','plans','payment','modules','settings','submissions','ratings','attemptLocks','examAttempts','scoreIndex','webhookEvents','notices'];
-    const out={}; for(const n of names) out[n]=await get(n);
+    const internalSecret=String(process.env.INTERNAL_AUTH_SECRET||'').trim();
+    if(!internalSecret)throw Object.assign(new Error('Exam service authorization is not configured.'),{status:503});
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    let examBackup;
+    try{
+      const response=await fetch(SERVER2_URL+'/api/internal/backup',{method:'GET',headers:{'X-Internal-Auth':internalSecret,'Accept':'application/json'},signal:controller.signal});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok||!payload.backup)throw Object.assign(new Error('Could not retrieve exam database backup from Server 2.'),{status:503});
+      examBackup=payload.backup;
+    }catch(err){
+      if(err.status)throw err;
+      console.error('[Backup] Server 2 backup failed:',err.name||'Error',String(err.message||'').slice(0,160));
+      throw Object.assign(new Error('Exam service is unavailable; backup was not created.'),{status:503});
+    }finally{clearTimeout(timer);}
+    const out={};
+    for(const name of ['users','purchases','subscriptions','plans','payment','modules','settings','orders','passwordResets','webhookEvents','notices'])out[name]=await get(name);
+    Object.assign(out,examBackup);
     return send(res,200,out);
   }
   if(url.pathname==='/api/admin/restore'&&method==='POST'){
     await requireRole(req,'admin');
     const b=await body(req);
-    if(!b.users||!b.tests) throw new Error('Backup is missing users/tests.');
-    for(const n of ['users','tests','purchases','subscriptions','plans','payment','modules','settings','submissions','ratings','attemptLocks','examAttempts','scoreIndex','webhookEvents','notices']) if(b[n]!==undefined) await set(n,b[n]);
-    return send(res,200,{message:'Restore complete.'});
+    if(!b||typeof b!=='object'||!b.users||typeof b.users!=='object'||Array.isArray(b.users)||!b.tests||typeof b.tests!=='object'||Array.isArray(b.tests))throw new Error('Backup is missing valid users/tests data.');
+    const internalSecret=String(process.env.INTERNAL_AUTH_SECRET||'').trim();
+    if(!internalSecret)throw Object.assign(new Error('Exam service authorization is not configured.'),{status:503});
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch(SERVER2_URL+'/api/internal/backup',{method:'POST',headers:{'X-Internal-Auth':internalSecret,'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({tests:b.tests,submissions:b.submissions,ratings:b.ratings,attemptLocks:b.attemptLocks,examAttempts:b.examAttempts,scoreIndex:b.scoreIndex}),signal:controller.signal});
+      if(!response.ok)throw Object.assign(new Error('Server 2 rejected the exam-data restore. Server 1 data was not changed.'),{status:503});
+    }catch(err){
+      if(err.status)throw err;
+      console.error('[Restore] Server 2 restore failed:',err.name||'Error',String(err.message||'').slice(0,160));
+      throw Object.assign(new Error('Exam service is unavailable; restore could not complete.'),{status:503});
+    }finally{clearTimeout(timer);}
+    const values={};
+    for(const name of ['users','purchases','subscriptions','plans','payment','modules','settings','orders','passwordResets','webhookEvents','notices'])if(b[name]!==undefined)values[name]=b[name];
+    await multiUpdate(values);
+    return send(res,200,{message:'Restore complete on both backend services.'});
   }
 
   throw Object.assign(new Error('Not found.'),{status:404});
