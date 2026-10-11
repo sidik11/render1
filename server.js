@@ -907,7 +907,18 @@ async function route(req, res) {
     if(!mod) throw new Error('Module not found.');
     const tests=await allMap('tests'), affected=Object.values(tests).filter(t=>t.category===mod.name);
     if(affected.length&&user.role!=='admin') throw new Error('Module still has test series.');
-    for(const t of affected) await remove('tests/'+t.id);
+    const internalSecret=String(process.env.INTERNAL_AUTH_SECRET||'').trim();
+    if(!internalSecret)throw Object.assign(new Error('Exam service authorization is not configured.'),{status:503});
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
+    try{
+      const response=await fetch(SERVER2_URL+'/api/internal/modules?name='+encodeURIComponent(mod.name),{method:'DELETE',headers:{'X-Internal-Auth':internalSecret,'Accept':'application/json'},signal:controller.signal});
+      if(!response.ok)throw Object.assign(new Error('Could not safely remove test series from Server 2. No module changes were made.'),{status:503});
+    }catch(err){
+      if(err.status)throw err;
+      console.error('[Modules] Server 2 module deletion failed:',err.name||'Error',String(err.message||'').slice(0,160));
+      throw Object.assign(new Error('Exam service is unavailable. Retry module deletion when Server 2 is online.'),{status:503});
+    }finally{clearTimeout(timer);}
+    for(const t of affected)await remove('tests/'+t.id);
     await remove('modules/'+id);
     return send(res,200,{message:affected.length?'Module and its test series were deleted.':'Module deleted.'});
   }
