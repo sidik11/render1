@@ -47,6 +47,10 @@ if (path.basename(path.dirname(serverPath)) === 'render2') {
     assert.match(source, /if\(!process\.env\.INTERNAL_AUTH_SECRET \|\| String\(req\.headers\['x-internal-auth'\]/);
     assert.match(source, /async function activeSubscription\(uidValue\)/);
     assert.ok(source.includes("if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)){"));
+    assert.ok(source.includes("send(res,200,{ok:true,user:publicUser(user)}); return true;"));
+    assert.ok(source.includes("send(res,errorStatus(e),{error:e.message||'Internal authentication failed.'}); return true;"));
+    assert.ok(source.includes("url.pathname==='/api/internal/purchase/approved'"));
+    assert.ok(source.includes("url.pathname==='/api/internal/backup'&&method==='GET'"));
     assert.ok(source.includes("await update('users/'+user.uid,{passwordHash:hashPassword(newPassword),updatedAt:nowIso()});"));
     assert.ok(source.includes("url.pathname==='/api/internal/purchase/approved'"));
     assert.ok(source.includes("plans:Object.values(await allMap('plans'))"));
