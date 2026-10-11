@@ -323,7 +323,6 @@ const ADMIN_OTP_SECRET = process.env.ADMIN_OTP_SECRET || AUTH_SESSION_SECRET;
 if (process.env.NODE_ENV === 'production' && AUTH_SESSION_SECRET.length < 32) throw new Error('AUTH_SESSION_SECRET must be configured with at least 32 characters in production.');
 if (process.env.NODE_ENV === 'production' && String(process.env.INTERNAL_AUTH_SECRET||'').trim().length < 32) throw new Error('INTERNAL_AUTH_SECRET must be configured with at least 32 characters in production and match on both servers.');
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
-const adminOtpState = { hash:'', expiresAt:0, attempts:0, sentAt:0 };
 const rateBuckets = new Map();
 function clientIp(req){ return String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().slice(0,80); }
 function rateKeyPart(value){ return crypto.createHash('sha256').update(String(value||'')).digest('hex').slice(0,32); }
@@ -662,22 +661,24 @@ async function route(req, res) {
   if (url.pathname==='/api/admin/request-otp' && method==='POST') {
     await body(req);
     await rateLimit(req,'admin-otp',5,900000,'admin');
-    if(Date.now()-adminOtpState.sentAt < 60*1000) throw Object.assign(new Error('Please wait 60 seconds before requesting another OTP.'),{status:429});
     const otp=String(crypto.randomInt(100000,1000000));
-    adminOtpState.hash=hashAdminOtp(otp);
-    adminOtpState.expiresAt=Date.now()+ADMIN_OTP_TTL_MS;
-    adminOtpState.attempts=0;
-    adminOtpState.sentAt=Date.now();
+    const otpRequestId=crypto.randomBytes(16).toString('hex');
+    const issuedAt=Date.now();
+    const issued=await transact('adminOtpState',current=>{
+      if(current && issuedAt-Number(current.sentAt||0)<60*1000)return;
+      return {hash:hashAdminOtp(otp),expiresAt:issuedAt+ADMIN_OTP_TTL_MS,attempts:0,consumed:false,sentAt:issuedAt,requestId:otpRequestId};
+    });
+    if(!issued.committed)throw Object.assign(new Error('Please wait 60 seconds before requesting another OTP.'),{status:429});
     const sent=await sendEmail(
       CFG.admin.email,
       'Competitive Exam Master Admin OTP',
       emailShell('Admin login verification','<p>Your one-time Admin login OTP is:</p><div style="font-size:32px;font-weight:800;letter-spacing:8px;padding:14px 0">'+otp+'</div><p>This OTP expires in 10 minutes. If you did not request this, ignore this email.</p>')
     );
     if (!sent || sent.ok !== true) {
-      adminOtpState.hash='';
-      adminOtpState.expiresAt=0;
-      adminOtpState.attempts=0;
-      adminOtpState.sentAt=0;
+      await transact('adminOtpState',current=>{
+        if(!current || current.requestId!==otpRequestId)return;
+        return {...current,hash:'',expiresAt:0,attempts:0,consumed:true,failedAt:Date.now()};
+      });
       const detail = sent?.error === 'config'
         ? sent.detail
         : 'Gmail API rejected the email request (status '+String(sent?.status || 'unknown')+', reason '+String(sent?.reason || 'unknown')+'). '+String(sent?.detail || '');
@@ -687,13 +688,27 @@ async function route(req, res) {
   }
 
   if (url.pathname==='/api/admin/verify-otp' && method==='POST') {
-    const b=await body(req), otp=String(b.otp||'').trim(); await rateLimit(req,'admin-otp-verify',10,900000,'admin');
-    if(!/^\d{6}$/.test(otp) || !adminOtpState.hash || Date.now()>adminOtpState.expiresAt) throw Object.assign(new Error('OTP is invalid or expired. Request a new OTP.'),{status:401});
-    adminOtpState.attempts++;
-    if(adminOtpState.attempts>5){ adminOtpState.hash=''; throw Object.assign(new Error('Too many OTP attempts. Request a new OTP.'),{status:429}); }
-    if(!crypto.timingSafeEqual(Buffer.from(hashAdminOtp(otp)),Buffer.from(adminOtpState.hash))) throw Object.assign(new Error('Incorrect OTP.'),{status:401});
+    const b=await body(req), otp=String(b.otp||'').trim();
+    await rateLimit(req,'admin-otp-verify',10,900000,'admin');
+    if(!/^\d{6}$/.test(otp))throw Object.assign(new Error('OTP is invalid or expired. Request a new OTP.'),{status:401});
+    const verifyRequestId=crypto.randomBytes(16).toString('hex');
+    const tx=await transact('adminOtpState',current=>{
+      const now=Date.now();
+      if(!current || !current.hash || current.consumed===true || now>Number(current.expiresAt))return;
+      const attempts=Number(current.attempts||0)+1;
+      const candidate=hashAdminOtp(otp),stored=String(current.hash||'');
+      const valid=stored.length===candidate.length&&crypto.timingSafeEqual(Buffer.from(candidate),Buffer.from(stored));
+      if(valid)return {...current,attempts,hash:'',consumed:true,consumedAt:now,consumedBy:verifyRequestId};
+      if(attempts>=5)return {...current,attempts,hash:'',consumed:true,consumedAt:now};
+      return {...current,attempts};
+    });
+    const otpState=tx.snapshot?.val?.();
+    if(!tx.committed)throw Object.assign(new Error('OTP is invalid or expired. Request a new OTP.'),{status:401});
+    if(otpState?.consumedBy!==verifyRequestId){
+      if(otpState?.consumed===true && Number(otpState.attempts||0)>=5)throw Object.assign(new Error('Too many OTP attempts. Request a new OTP.'),{status:429});
+      throw Object.assign(new Error('Incorrect OTP.'),{status:401});
+    }
     const adminUid='admin-cem-master';
-    adminOtpState.hash=''; adminOtpState.expiresAt=0; adminOtpState.attempts=0;
     setSessionCookie(res,createAdminSession(adminUid),'admin');
     return send(res,200,{
       message:'Admin login successful.',
