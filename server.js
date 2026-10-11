@@ -39,7 +39,7 @@ const RAZORPAY_KEY_SECRET_ENV = ['RAZORPAY_KEY_SECRET','RAZORPAY_TEST_KEY_SECRET
 const RAZORPAY_WEBHOOK_SECRET_ENV = ['RAZORPAY_WEBHOOK_SECRET','RAZORPAY_TEST_WEBHOOK_SECRET','RZP_WEBHOOK_SECRET'];
 
 const CFG = {
-  port: Number(process.env.SERVER1_PORT || process.env.PORT || 3000),
+  port: Number(process.env.PORT || process.env.SERVER1_PORT || 3000),
   role: 'core',
   dbUrl: process.env.SERVER1_FIREBASE_DATABASE_URL || '',
   projectId: process.env.SERVER1_FIREBASE_PROJECT_ID || '',
