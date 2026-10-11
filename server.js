@@ -1227,9 +1227,25 @@ async function route(req, res) {
     return send(res,200,{purchases:Object.values(await allMap('purchases')).filter(p=>p.studentId===user.uid)});
   }
   if(url.pathname==='/api/purchases/request'&&method==='POST'){
-    const {user}=await requireRole(req,'student'), b=await body(req), tests=await allMap('tests'), t=tests[b.testId];
-    if(!t||!t.published) throw new Error('Test not found.');
-    if(t.type!=='paid') throw new Error('That test is free.');
+    const {user}=await requireRole(req,'student'),b=await body(req),testId=String(b.testId||'').trim();
+    if(!testId||testId.length>200)throw new Error('Test not found.');
+    const internalSecret=String(process.env.INTERNAL_AUTH_SECRET||'').trim();
+    if(!internalSecret)throw Object.assign(new Error('Exam service authorization is not configured.'),{status:503});
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
+    let t;
+    try{
+      const response=await fetch(SERVER2_URL+'/api/internal/tests/'+encodeURIComponent(testId),{method:'GET',headers:{'X-Internal-Auth':internalSecret,'Accept':'application/json'},signal:controller.signal});
+      const payload=await response.json().catch(()=>({}));
+      if(response.status===404)throw Object.assign(new Error('Test not found.'),{status:404});
+      if(!response.ok||!payload.test||payload.test.id!==testId)throw Object.assign(new Error('Could not verify this test with the exam service.'),{status:503});
+      t=payload.test;
+    }catch(err){
+      if(err.status)throw err;
+      console.error('[Purchases] Server 2 test lookup failed:',err.name||'Error',String(err.message||'').slice(0,160));
+      throw Object.assign(new Error('Exam service is unavailable. Please retry.'),{status:503});
+    }finally{clearTimeout(timer);}
+    if(!t.published)throw new Error('Test not found.');
+    if(t.type!=='paid')throw new Error('That test is free.');
     const p={id:uid('pur-'),testId:t.id,testTitle:t.title,price:t.price,studentId:user.uid,studentName:user.name,studentEmail:user.email,status:'pending',requestedAt:nowIso(),decidedAt:null};
     const purchaseTx=await transact('purchases',current=>{
       const purchases=current&&typeof current==='object'?current:{};
