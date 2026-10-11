@@ -28,6 +28,13 @@ test('password reset attempts and single-use consumption are transactional', () 
   assert.doesNotMatch(source, /forgot-confirm-email[^\n]*,otp=/);
 });
 
+test('admin OTP state is persisted transactionally and can only be consumed once', () => {
+  assert.match(source, /transact\('adminOtpState',current=>/);
+  assert.match(source, /consumedBy:verifyRequestId/);
+  assert.match(source, /consumed:true/);
+  assert.doesNotMatch(source, /const adminOtpState\s*=/);
+});
+
 test('record updates do not overwrite subscription and purchase collections from stale snapshots', () => {
   assert.doesNotMatch(source, /await set\('subscriptions',\s*subs\)/);
   assert.doesNotMatch(source, /await set\('purchases',\s*ps\)/);
