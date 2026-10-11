@@ -46,5 +46,7 @@ if (path.basename(path.dirname(serverPath)) === 'render2') {
   test('internal verification endpoints reject missing shared secrets', () => {
     assert.match(source, /if\(!process\.env\.INTERNAL_AUTH_SECRET \|\| String\(req\.headers\['x-internal-auth'\]/);
     assert.match(source, /async function activeSubscription\(uidValue\)/);
+    assert.ok(source.includes("if(!process.env.INTERNAL_AUTH_SECRET || String(req.headers['x-internal-auth']||'')!==String(process.env.INTERNAL_AUTH_SECRET)){"));
+    assert.ok(source.includes("await update('users/'+user.uid,{passwordHash:hashPassword(newPassword),updatedAt:nowIso()});"));
   });
 }
